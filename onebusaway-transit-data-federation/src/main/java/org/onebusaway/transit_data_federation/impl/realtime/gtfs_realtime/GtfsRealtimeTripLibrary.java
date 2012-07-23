@@ -432,19 +432,17 @@ class GtfsRealtimeTripLibrary {
     long t = currentTime();
     if (stopTimeUpdate.hasArrival()) {
       StopTimeEvent arrival = stopTimeUpdate.getArrival();
-      if (arrival.hasDelay()) {
-        return (int) ((t - serviceDate) / 1000 - arrival.getDelay());
-      }
       if (arrival.hasTime())
         return (int) (arrival.getTime() - serviceDate / 1000);
+      if (arrival.hasDelay())
+        return (int) ((t - serviceDate) / 1000 - arrival.getDelay());
     }
     if (stopTimeUpdate.hasDeparture()) {
       StopTimeEvent departure = stopTimeUpdate.getDeparture();
-      if (departure.hasDelay()) {
-        return (int) ((t - serviceDate) / 1000 - departure.getDelay());
-      }
       if (departure.hasTime())
         return (int) (departure.getTime() - serviceDate / 1000);
+      if (departure.hasDelay())
+        return (int) ((t - serviceDate) / 1000 - departure.getDelay());
     }
     throw new IllegalStateException(
         "expected at least an arrival or departure time or delay for update: "
@@ -456,10 +454,10 @@ class GtfsRealtimeTripLibrary {
     if (!stopTimeUpdate.hasArrival())
       return -1;
     StopTimeEvent arrival = stopTimeUpdate.getArrival();
-    if (arrival.hasDelay())
-      return stopTime.getArrivalTime() + arrival.getDelay();
     if (arrival.hasTime())
       return (int) (arrival.getTime() - serviceDate / 1000);
+    if (arrival.hasDelay())
+      return stopTime.getArrivalTime() + arrival.getDelay();
     throw new IllegalStateException(
         "expected arrival delay or time for stopTimeUpdate " + stopTimeUpdate);
   }
@@ -469,10 +467,10 @@ class GtfsRealtimeTripLibrary {
     if (!stopTimeUpdate.hasDeparture())
       return -1;
     StopTimeEvent departure = stopTimeUpdate.getDeparture();
-    if (departure.hasDelay())
-      return stopTime.getDepartureTime() + departure.getDelay();
     if (departure.hasTime())
       return (int) (departure.getTime() - serviceDate / 1000);
+    if (departure.hasDelay())
+      return stopTime.getDepartureTime() + departure.getDelay();
     throw new IllegalStateException(
         "expected departure delay or time for stopTimeUpdate " + stopTimeUpdate);
   }
