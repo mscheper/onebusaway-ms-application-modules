@@ -115,10 +115,20 @@ public class ArrivalAndDepartureInstance {
     return predictedArrivalTime != 0;
   }
 
+  /**
+   * Returns the predicted arrival time.
+   * 
+   * @return the predicted arrival time in milliseconds since the epoch
+   */
   public long getPredictedArrivalTime() {
     return predictedArrivalTime;
   }
 
+  /**
+   * Sets the predicted arrival time.
+   * 
+   * @param predictedArrivalTime the predicted arrival time in milliseconds since the epoch
+   */
   public void setPredictedArrivalTime(long predictedArrivalTime) {
     this.predictedArrivalTime = predictedArrivalTime;
   }
@@ -136,10 +146,20 @@ public class ArrivalAndDepartureInstance {
     return predictedDepartureTime != 0;
   }
 
+  /**
+   * Returns the predicted departure time.
+   * 
+   * @return the predicted departure time in milliseconds since the epoch
+   */
   public long getPredictedDepartureTime() {
     return predictedDepartureTime;
   }
 
+  /**
+   * Sets the predicted departure time.
+   * 
+   * @param predictedDepartureTime the predicted departure time in milliseconds since the epoch
+   */
   public void setPredictedDepartureTime(long predictedDepartureTime) {
     this.predictedDepartureTime = predictedDepartureTime;
   }

@@ -1,0 +1,352 @@
+package org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime;
+
+import org.onebusaway.collections.tuple.Pair;
+import org.onebusaway.collections.tuple.Tuples;
+import org.onebusaway.gtfs.model.AgencyAndId;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.TreeMap;
+
+/**
+ * A memory-based short-term store for stop time predictions.
+ * 
+ * @author <a href="mailto:git@michaelscheper.com">Michael Scheper</a>,
+ *         <a href="mailto:Michael.Scheper@rms.nsw.gov.au">New South Wales Roads &amp; Maritime Service</a>
+ */
+@Component
+public class ShortTermStopTimePredictionStorageServiceImpl implements
+    ShortTermStopTimePredictionStorageService {
+
+  private static final Logger _log = LoggerFactory.getLogger(
+      ShortTermStopTimePredictionStorageServiceImpl.class);
+
+  private int _maximumPredictionAgeSeconds
+      = ShortTermStopTimePredictionStorageService.DEFAULT_MAXIMUM_PREDICTION_AGE_SECONDS;
+
+  private int _bucketSizeSeconds
+      = ShortTermStopTimePredictionStorageService.DEFAULT_BUCKET_SIZE_SECONDS;
+
+  /**
+   * The predictions map. The keys are Pair&lt;trip,stop&gt;.
+   */
+  private Map<Pair<AgencyAndId>, Prediction> _predictions
+      = new HashMap<Pair<AgencyAndId>, Prediction>();
+
+  /**
+   * A map of expiry time intervals to lists of prediction keys. For each entry,
+   * the key is the bucket timestamp, and the value is a set of keys to the
+   * {@link _predictions} map. The bucket timestamp is the most recent timestamp
+   * possible for any entry in the _predictions map whose &lt;trip,stop&gt; key
+   * is in the bucket.
+   */
+  private SortedMap<Long, Set<Pair<AgencyAndId>>> _expiryBuckets
+      = new TreeMap<Long, Set<Pair<AgencyAndId>>>();
+
+  private Timer _expiredPredictionCleanUpTimer;
+
+  private ExpiredPredictionCleanUpTask _expiredPredictionCleanUpTask;
+
+  public ShortTermStopTimePredictionStorageServiceImpl() {
+    _expiredPredictionCleanUpTask = new ExpiredPredictionCleanUpTask();
+    constructExpiredPredictionCleanUpTimer();
+  }
+
+  @Override
+  public Pair<Long> getPrediction(AgencyAndId trip, AgencyAndId stop) {
+    Pair<AgencyAndId> tripIdAndStopId = Tuples.pair(trip, stop);
+    Prediction prediction = _predictions.get(tripIdAndStopId);
+    if ("2000119".equals(stop.getId())) {
+      _log.debug(String.format("getPrediction(%s): %s", tripIdAndStopId,
+          prediction));
+    }
+    if (prediction == null) {
+      return null;
+    }
+    return Tuples.pair(prediction.arrivalTimeSeconds,
+        prediction.departureTimeSeconds);
+  }
+
+  @Override
+  public void putPrediction(AgencyAndId trip, AgencyAndId stop,
+      Long arrivalTimeSeconds, Long departureTimeSeconds,
+      long predictionTimestampSeconds) {
+
+    Pair<AgencyAndId> tripIdAndStopId = Tuples.pair(trip, stop);
+
+    Prediction prediction = new Prediction(arrivalTimeSeconds,
+        departureTimeSeconds, predictionTimestampSeconds);
+
+    synchronized (_predictions) {
+      removeFromExpiryBucket(tripIdAndStopId);
+      _predictions.put(tripIdAndStopId, prediction);
+      putInExpiryBucket(tripIdAndStopId, predictionTimestampSeconds);
+    }
+  }
+
+  @Override
+  public void setMaximumPredictionAgeSeconds(int maximumPredictionAgeSeconds) {
+    _maximumPredictionAgeSeconds = maximumPredictionAgeSeconds;
+  }
+
+  @Override
+  public void setBucketSizeSeconds(int bucketSizeSeconds) {
+    _bucketSizeSeconds = bucketSizeSeconds;
+    constructExpiredPredictionCleanUpTimer();
+  }
+
+  /**
+   * Simple class for storing prediciton data. All times are expressed in
+   * <em>seconds</em> since the epoch. Arrival and departure times may be
+   * <code>null</code>, such as for the departure time at the last stop of a
+   * trip.
+   */
+  private class Prediction {
+
+    Prediction(Long arrivalTimeSeconds, Long departureTimeSeconds,
+        long predictionTimestampSeconds) {
+      this.arrivalTimeSeconds = arrivalTimeSeconds;
+      this.departureTimeSeconds = departureTimeSeconds;
+      this.predictionTimestampSeconds = predictionTimestampSeconds;
+    }
+
+    /** The arrival time. */
+    Long arrivalTimeSeconds;
+
+    /** The departure time. */
+    Long departureTimeSeconds;
+
+    /** The time that the prediction was made. */
+    long predictionTimestampSeconds;
+
+    @Override
+    public int hashCode() {
+      final int prime = 31;
+      int result = 1;
+      result = prime * result + getOuterType().hashCode();
+      result = prime * result
+          + ((arrivalTimeSeconds == null) ? 0 : arrivalTimeSeconds.hashCode());
+      result = prime
+          * result
+          + ((departureTimeSeconds == null) ? 0
+              : departureTimeSeconds.hashCode());
+      result = prime * result
+          + (int) (predictionTimestampSeconds
+          ^ (predictionTimestampSeconds >>> 32));
+      return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj)
+        return true;
+      if (obj == null)
+        return false;
+      if (getClass() != obj.getClass())
+        return false;
+      Prediction other = (Prediction) obj;
+      if (!getOuterType().equals(other.getOuterType()))
+        return false;
+      if (arrivalTimeSeconds == null) {
+        if (other.arrivalTimeSeconds != null)
+          return false;
+      } else if (!arrivalTimeSeconds.equals(other.arrivalTimeSeconds))
+        return false;
+      if (departureTimeSeconds == null) {
+        if (other.departureTimeSeconds != null)
+          return false;
+      } else if (!departureTimeSeconds.equals(other.departureTimeSeconds))
+        return false;
+      if (predictionTimestampSeconds != other.predictionTimestampSeconds)
+        return false;
+      return true;
+    }
+
+    private ShortTermStopTimePredictionStorageServiceImpl getOuterType() {
+      return ShortTermStopTimePredictionStorageServiceImpl.this;
+    }
+
+    @Override
+    public String toString() {
+      StringBuilder builder = new StringBuilder();
+      builder.append("Prediction{ arrivalTimeSeconds=");
+      builder.append(debugTimeFormat(arrivalTimeSeconds));
+      builder.append("; departureTimeSeconds=");
+      builder.append(debugTimeFormat(departureTimeSeconds));
+      builder.append("; predictionTimestampSeconds=");
+      builder.append(debugTimeFormat(predictionTimestampSeconds));
+      builder.append(" }");
+      return builder.toString();
+    }
+  }
+
+  /**
+   * Yep, a TimerTask that cleans up expired predictions.
+   */
+  private class ExpiredPredictionCleanUpTask extends TimerTask {
+    @Override
+    public void run() {
+      removeExpiredPredictions();
+    }
+  }
+
+  private void constructExpiredPredictionCleanUpTimer() {
+    if (_expiredPredictionCleanUpTimer != null) {
+      _expiredPredictionCleanUpTimer.cancel();
+    }
+    String name = String.format("Expired Prediction Clean-Up Task");
+    _expiredPredictionCleanUpTimer = new Timer(name, true);
+    _expiredPredictionCleanUpTimer.schedule(_expiredPredictionCleanUpTask, 0,
+        _bucketSizeSeconds * 1000);
+    _log.info(name);
+  }
+
+  /**
+   * Calculates the bucket timestamp for a prediction timestamp. The bucket
+   * timestamp is the most recent timestamp that any prediction it contains
+   * could have. Both timestamps are expressed in seconds since the epoch.
+   *
+   * @param predictionTimestampSeconds the prediction timestamp
+   * @return the bucket timestamp
+   */
+  private long getBucketTimestamp(long predictionTimestampSeconds) {
+    long key = predictionTimestampSeconds / _bucketSizeSeconds;
+    key *= _bucketSizeSeconds;
+    key += _bucketSizeSeconds;
+    key -= 1;
+    return key;
+  }
+
+  /**
+   * Adds a prediction to a correctly timestamped expiry bucket, creating it if
+   * necessary. The calling method must synchronise on {@link #_predictions}
+   * while calling this method.
+   */
+  private void putInExpiryBucket(Pair<AgencyAndId> tripIdAndStopId,
+      long predictionTimestampSeconds) {
+    long bucketTimestamp = getBucketTimestamp(predictionTimestampSeconds);
+    Set<Pair<AgencyAndId>> bucket = _expiryBuckets.get(bucketTimestamp);
+    if (bucket == null) {
+      _log.debug(String.format("Created bucket %s",
+          debugTimeFormat(bucketTimestamp)));
+      bucket = new HashSet<Pair<AgencyAndId>>();
+      _expiryBuckets.put(bucketTimestamp, bucket);
+    }
+    bucket.add(tripIdAndStopId);
+  }
+
+  /**
+   * Removes a prediction from its expiry bucket, if such a prediction exists.
+   * The calling method must synchronise on {@link #_predictions} while calling
+   * this method.
+   */
+  private void removeFromExpiryBucket(Pair<AgencyAndId> tripIdAndStopId) {
+    Prediction oldPrediction = _predictions.get(tripIdAndStopId);
+    if (oldPrediction == null) {
+      return;
+    }
+    long bucketTimestamp = getBucketTimestamp(
+        oldPrediction.predictionTimestampSeconds);
+    Set<Pair<AgencyAndId>> bucket = _expiryBuckets.get(bucketTimestamp);
+    if (bucket == null) {
+      _log.error(String.format(
+        "No bucket %s found for old prediction %s for %s",
+        debugTimeFormat(bucketTimestamp), oldPrediction, tripIdAndStopId));
+      return;
+    }
+    if (!bucket.remove(tripIdAndStopId)) {
+      _log.error(String.format(
+        "Bucket %s did not contain old prediction %s for %s",
+        debugTimeFormat(bucketTimestamp), oldPrediction, tripIdAndStopId));
+      return;
+    }
+    if (bucket.isEmpty()) {
+      _log.debug(String.format("Removing empty bucket %s.",
+          debugTimeFormat(bucketTimestamp)));
+      _expiryBuckets.remove(bucketTimestamp);
+    }
+  }
+
+  private void removeExpiredPredictions() {
+    synchronized (_predictions) {
+      for (Iterator<Map.Entry<Long, Set<Pair<AgencyAndId>>>> bucketIterator
+          = _expiryBuckets.entrySet().iterator(); bucketIterator.hasNext(); ) {
+
+        Map.Entry<Long, Set<Pair<AgencyAndId>>> bucketEntry = bucketIterator.next();
+
+        Long bucketTimestamp = bucketEntry.getKey();
+        if (!isPredictionExpired(bucketTimestamp)) {
+          _log.debug(String.format(
+              "All expired predictions have been removed. Next "
+              + "bucketTimestamp is %s. Bucket count is %d.",
+              debugTimeFormat(bucketTimestamp), _expiryBuckets.size()));
+          // We're up to date!
+          return;
+        }
+
+        Set<Pair<AgencyAndId>> bucket = bucketEntry.getValue();
+
+        _log.debug(String.format("Removing %d expired predictions for %s:",
+            bucket.size(), debugTimeFormat(bucketTimestamp)));
+
+        for (Iterator<Pair<AgencyAndId>> bucketContentIterator = bucket.iterator();
+            bucketContentIterator.hasNext();) {
+
+          Pair<AgencyAndId> tripIdAndStopId = bucketContentIterator.next();
+          Prediction prediction = _predictions.get(tripIdAndStopId);
+
+          if (prediction == null) {
+            _log.error(String.format(
+              "Expected prediction for %s, found in bucket %s, was not found "
+              + "in the predictions map", tripIdAndStopId,
+              debugTimeFormat(bucketTimestamp)));
+            continue;
+          }
+          if (!isPredictionExpired(prediction.predictionTimestampSeconds)) {
+            _log.error(String.format(
+              "Prediction %s for %s was in bucket %s but has not expired",
+              prediction, tripIdAndStopId, debugTimeFormat(bucketTimestamp)));
+            continue;
+          }
+
+          _predictions.remove(tripIdAndStopId);
+          bucketContentIterator.remove();
+
+          if ("2000119".equals(tripIdAndStopId.getSecond().getId())) {
+            _log.debug(String.format("\tRemoved prediction %s for %s from "
+                + "bucket %s", prediction, tripIdAndStopId,
+                debugTimeFormat(bucketTimestamp)));
+          }
+
+        }
+
+        if (!bucket.isEmpty()) {
+          _log.error(String.format("Bucket %s isn't empty!",
+              debugTimeFormat(bucketTimestamp)));
+        }
+        bucketIterator.remove();
+      }
+    }
+  }
+
+  private boolean isPredictionExpired(long predictionTimestampSeconds) {
+    return System.currentTimeMillis() - predictionTimestampSeconds * 1000
+        > _maximumPredictionAgeSeconds * 1000;
+  }
+
+  private static String debugTimeFormat(Long timeSeconds) {
+    return String.format("%d (%tc)", timeSeconds, timeSeconds == null ? null
+        : timeSeconds * 1000);
+  }
+}

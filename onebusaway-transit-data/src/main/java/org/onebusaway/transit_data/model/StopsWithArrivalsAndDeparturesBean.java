@@ -86,4 +86,27 @@ public class StopsWithArrivalsAndDeparturesBean extends ApplicationBean {
   public void setTimeZone(String timeZone) {
     this.timeZone = timeZone;
   }
+
+  @Override
+  public String toString() {
+    final int maxLen = 64;
+    StringBuilder builder = new StringBuilder();
+    builder.append("StopsWithArrivalsAndDeparturesBean{ stops=");
+    builder.append(stops != null ? stops.subList(0,
+        Math.min(stops.size(), maxLen)) : null);
+    builder.append("; arrivalsAndDepartures=");
+    builder.append(arrivalsAndDepartures != null
+        ? arrivalsAndDepartures.subList(0,
+            Math.min(arrivalsAndDepartures.size(), maxLen)) : null);
+    builder.append("; nearbyStops=");
+    builder.append(nearbyStops != null ? nearbyStops.subList(0,
+        Math.min(nearbyStops.size(), maxLen)) : null);
+    builder.append("; situations=");
+    builder.append(situations != null ? situations.subList(0,
+        Math.min(situations.size(), maxLen)) : null);
+    builder.append("; timeZone=");
+    builder.append(timeZone);
+    builder.append(" }");
+    return builder.toString();
+  }
 }

@@ -73,31 +73,40 @@ class VehicleStatusServiceImpl implements VehicleLocationListener,
     if (record.getTimeOfRecord() == 0)
       throw new IllegalArgumentException("you must specify a record time");
 
-    if( record.getVehicleId() != null)
-      _vehicleRecordsById.put(record.getVehicleId(), record);
+    try {
 
-    AgencyAndId blockId = record.getBlockId();
+      if( record.getVehicleId() != null)
+        _vehicleRecordsById.put(record.getVehicleId(), record);
 
-    if (blockId == null) {
-      AgencyAndId tripId = record.getTripId();
-      if (tripId != null) {
-        TripEntry tripEntry = _transitGraphDao.getTripEntryForId(tripId);
-        if (tripEntry == null)
-          throw new IllegalArgumentException("trip not found with id=" + tripId);
-        BlockEntry block = tripEntry.getBlock();
-        blockId = block.getId();
+      AgencyAndId blockId = record.getBlockId();
+
+      if (blockId == null) {
+        AgencyAndId tripId = record.getTripId();
+        if (tripId != null) {
+          TripEntry tripEntry = _transitGraphDao.getTripEntryForId(tripId);
+          if (tripEntry == null)
+            throw new IllegalArgumentException("trip not found with id=" + tripId);
+          BlockEntry block = tripEntry.getBlock();
+          blockId = block.getId();
+        }
       }
-    }
 
-    // TODO : Maybe not require service date?
-    if (blockId != null && record.getServiceDate() != 0)
-      _blockVehicleLocationService.handleVehicleLocationRecord(record);
+      // TODO : Maybe not require service date?
+      if (blockId != null && record.getServiceDate() != 0)
+        _blockVehicleLocationService.handleVehicleLocationRecord(record);
 
-    // if vehicle has no block or has lost it, remove it from the block VLS.
-    else {
-      if(record.getVehicleId() != null) {
-        _blockVehicleLocationService.resetVehicleLocation(record.getVehicleId());
+      // if vehicle has no block or has lost it, remove it from the block VLS.
+      else {
+        if(record.getVehicleId() != null) {
+          _blockVehicleLocationService.resetVehicleLocation(record.getVehicleId());
+        }
       }
+    } catch (Exception e) {
+      throw new RuntimeException(String.format("Exception handling %s " +
+            "(timeOfRecord: %d (%tc), vehicleId: %s, blockId: %s, tripId: %s)",
+            record,
+            record.getTimeOfRecord(), record.getTimeOfRecord(),
+            record.getVehicleId(), record.getBlockId(), record.getTripId()), e);
     }
   }
 

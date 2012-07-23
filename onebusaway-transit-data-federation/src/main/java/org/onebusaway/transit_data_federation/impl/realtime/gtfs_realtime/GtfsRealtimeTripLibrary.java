@@ -96,29 +96,39 @@ class GtfsRealtimeTripLibrary {
       update.tripUpdates = entry.getValue();
 
       FeedEntity vehiclePositionEntity = vehiclePositionsByBlockDescriptor.get(update.block);
-      if (vehiclePositionEntity != null) {
-        VehiclePosition vehiclePosition = vehiclePositionEntity.getVehicle();
-        update.vehiclePosition = vehiclePosition;
-        if (vehiclePosition.hasVehicle()) {
-          VehicleDescriptor vehicle = vehiclePosition.getVehicle();
-          if (vehicle.hasId()) {
-            update.block.setVehicleId(vehicle.getId());
-          }
-        }
-      }
 
-      if (update.block.getVehicleId() == null) {
-        for (TripUpdate tripUpdate : update.tripUpdates) {
-          if (tripUpdate.hasVehicle()) {
-            VehicleDescriptor vehicle = tripUpdate.getVehicle();
+      try {
+
+        if (vehiclePositionEntity != null) {
+          VehiclePosition vehiclePosition = vehiclePositionEntity.getVehicle();
+          update.vehiclePosition = vehiclePosition;
+          if (vehiclePosition.hasVehicle()) {
+            VehicleDescriptor vehicle = vehiclePosition.getVehicle();
             if (vehicle.hasId()) {
               update.block.setVehicleId(vehicle.getId());
             }
           }
         }
-      }
 
-      updates.add(update);
+        if (update.block.getVehicleId() == null) {
+          for (TripUpdate tripUpdate : update.tripUpdates) {
+            if (tripUpdate.hasVehicle()) {
+              VehicleDescriptor vehicle = tripUpdate.getVehicle();
+              if (vehicle.hasId()) {
+                update.block.setVehicleId(vehicle.getId());
+              }
+            }
+          }
+        }
+
+        updates.add(update);
+
+      } catch (Exception e) {
+        _log.warn(String.format(
+            "Exception handling { block { %s } vehiclePositionEntity { %s } }",
+            update.block == null ? null : update.block.getBlockEntry(),
+            vehiclePositionEntity).replace("\n", " "), e);
+      }
     }
 
     return updates;
@@ -192,20 +202,28 @@ class GtfsRealtimeTripLibrary {
         _log.warn("epxected a FeedEntity with a TripUpdate");
         continue;
       }
+
       TripDescriptor trip = tripUpdate.getTrip();
-      BlockDescriptor blockDescriptor = getTripDescriptorAsBlockDescriptor(
-          trip, true);
-      totalTrips++;
-      if (blockDescriptor == null) {
-        unknownTrips++;
-        continue;
-      }
 
-      if (!hasDelayValue(tripUpdate)) {
-        continue;
-      }
+      try {
+        BlockDescriptor blockDescriptor = getTripDescriptorAsBlockDescriptor(
+            trip, true);
+        totalTrips++;
+        if (blockDescriptor == null) {
+          unknownTrips++;
+          continue;
+        }
 
-      tripUpdatesByBlockDescriptor.get(blockDescriptor).add(tripUpdate);
+        if (!hasDelayValue(tripUpdate)) {
+          continue;
+        }
+
+        tripUpdatesByBlockDescriptor.get(blockDescriptor).add(tripUpdate);
+      } catch (Exception e) {
+        _log.warn(String.format(
+            "Exception handling { tripUpdate { %s } tripDescriptor { %s } }",
+            tripUpdate, trip).replace("\n", " "), e);
+      }
     }
 
     if (unknownTrips > 0) {
@@ -257,15 +275,23 @@ class GtfsRealtimeTripLibrary {
       if (!(vehiclePosition.hasTrip() || vehiclePosition.hasPosition())) {
         continue;
       }
+
       TripDescriptor trip = vehiclePosition.getTrip();
-      BlockDescriptor blockDescriptor = getTripDescriptorAsBlockDescriptor(
-          trip, includeVehicleIds);
-      if (blockDescriptor != null) {
-        FeedEntity existing = vehiclePositionsByBlockDescriptor.put(
-            blockDescriptor, entity);
-        if (existing != null) {
-          _log.warn("multiple updates found for trip: " + trip);
+
+      try{
+        BlockDescriptor blockDescriptor = getTripDescriptorAsBlockDescriptor(
+            trip, includeVehicleIds);
+        if (blockDescriptor != null) {
+          FeedEntity existing = vehiclePositionsByBlockDescriptor.put(
+              blockDescriptor, entity);
+          if (existing != null) {
+            _log.warn("multiple updates found for trip: " + trip);
+          }
         }
+      } catch (Exception e) {
+        _log.warn(String.format(
+            "Exception handling { feedEntity { %s } vehiclePosition { %s } tripDescriptor { %s } }",
+            entity, vehiclePosition, trip).replace("\n", " "), e);
       }
     }
 
@@ -344,7 +370,7 @@ class GtfsRealtimeTripLibrary {
               best.isInPast = false;
               best.scheduleDeviation = delay;
             }
-            
+
             if (obaTripUpdate.hasTimestamp()) {
               best.timestamp = obaTripUpdate.getTimestamp() * 1000;
             }

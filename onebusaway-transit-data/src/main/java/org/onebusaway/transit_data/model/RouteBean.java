@@ -42,11 +42,11 @@ public final class RouteBean implements Serializable {
   public static Builder builder() {
     return new Builder();
   }
-  
+
   public static Builder builder(RouteBean bean) {
     return new Builder(bean);
   }
-  
+
   private RouteBean() {
     this(builder());
   }
@@ -133,9 +133,9 @@ public final class RouteBean implements Serializable {
     private AgencyBean agency;
 
     public Builder() {
-      
+
     }
-    
+
     public Builder(RouteBean bean) {
       this.agency = bean.agency;
       this.color = bean.color;
@@ -187,5 +187,35 @@ public final class RouteBean implements Serializable {
     public void setAgency(AgencyBean agency) {
       this.agency = agency;
     }
+  }
+
+  /*
+   * (non-Javadoc)
+   * 
+   * @see java.lang.Object#toString()
+   */
+  @Override
+  public String toString() {
+    StringBuilder builder2 = new StringBuilder();
+    builder2.append("RouteBean{ id=");
+    builder2.append(id);
+    builder2.append("; shortName=");
+    builder2.append(shortName);
+    builder2.append("; longName=");
+    builder2.append(longName);
+    builder2.append("; description=");
+    builder2.append(description);
+    builder2.append("; type=");
+    builder2.append(type);
+    builder2.append("; url=");
+    builder2.append(url);
+    builder2.append("; color=");
+    builder2.append(color);
+    builder2.append("; textColor=");
+    builder2.append(textColor);
+    builder2.append("; agency=");
+    builder2.append(agency);
+    builder2.append(" }");
+    return builder2.toString();
   }
 }

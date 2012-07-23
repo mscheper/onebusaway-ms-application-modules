@@ -52,8 +52,12 @@ import com.google.transit.realtime.GtfsRealtime.Alert;
 import com.google.transit.realtime.GtfsRealtime.FeedEntity;
 import com.google.transit.realtime.GtfsRealtime.FeedHeader;
 import com.google.transit.realtime.GtfsRealtime.FeedMessage;
+import com.google.transit.realtime.GtfsRealtime.TripDescriptor;
+import com.google.transit.realtime.GtfsRealtime.TripUpdate;
+import com.google.transit.realtime.GtfsRealtime.TripUpdate.StopTimeUpdate;
 import com.google.transit.realtime.GtfsRealtimeConstants;
 import com.google.transit.realtime.GtfsRealtimeOneBusAway;
+import com.google.transit.realtime.GtfsRealtimeOneBusAway.OneBusAwayTripUpdate;
 
 public class GtfsRealtimeSource {
 
@@ -112,6 +116,8 @@ public class GtfsRealtimeSource {
 
   private GtfsRealtimeAlertLibrary _alertLibrary;
 
+  private ShortTermStopTimePredictionStorageService _shortTermStopTimePredictionStorageService;
+
   @Autowired
   public void setAgencyService(AgencyService agencyService) {
     _agencyService = agencyService;
@@ -142,6 +148,12 @@ public class GtfsRealtimeSource {
   public void setScheduledExecutorService(
       ScheduledExecutorService scheduledExecutorService) {
     _scheduledExecutorService = scheduledExecutorService;
+  }
+
+  @Autowired
+  public void setShortTermStopTimePredictionStorageService(
+      ShortTermStopTimePredictionStorageService shortTermStopTimePredictionStorageService) {
+    _shortTermStopTimePredictionStorageService = shortTermStopTimePredictionStorageService;
   }
 
   public void setTripUpdatesUrl(URL tripUpdatesUrl) {
@@ -210,12 +222,85 @@ public class GtfsRealtimeSource {
     FeedMessage tripUpdates = readOrReturnDefault(_tripUpdatesUrl);
     FeedMessage vehiclePositions = readOrReturnDefault(_vehiclePositionsUrl);
     FeedMessage alerts = readOrReturnDefault(_alertsUrl);
+    storeTripUpdates(tripUpdates);
     handeUpdates(tripUpdates, vehiclePositions, alerts);
   }
 
   /****
    * Private Methods
    ****/
+
+  private void storeTripUpdates(FeedMessage tripUpdates) {
+    int tripUpdateCount = 0;
+    int stopUpdateCount = 0;
+    long earliestTimestamp = Long.MAX_VALUE;
+    long latestTimestamp = 0;
+    for (FeedEntity entity : tripUpdates.getEntityList()) {
+      TripUpdate tripUpdate = entity.getTripUpdate();
+      if (tripUpdate == null) {
+        _log.warn("expected a FeedEntity with a TripUpdate");
+        continue;
+      }
+
+      TripDescriptor tripDescriptor = tripUpdate.getTrip();
+
+      try {
+        AgencyAndId trip = createId(tripDescriptor.getTripId());
+        // TODO: support GtfsRealtimeOneBusAway.delay
+
+        long timestampSeconds;
+        if (tripUpdate.hasExtension(GtfsRealtimeOneBusAway.obaTripUpdate)
+            && ((OneBusAwayTripUpdate) tripUpdate.getExtension(
+            GtfsRealtimeOneBusAway.obaTripUpdate)).hasTimestamp()) {
+          OneBusAwayTripUpdate obaTripUpdate
+              = tripUpdate.getExtension(GtfsRealtimeOneBusAway.obaTripUpdate);
+          timestampSeconds = obaTripUpdate.getTimestamp();
+        } else if (tripUpdates.hasHeader()
+            && tripUpdates.getHeader().hasTimestamp()) {
+          timestampSeconds = tripUpdates.getHeader().getTimestamp();
+        } else {
+          timestampSeconds = System.currentTimeMillis() / 1000;
+        }
+        if (timestampSeconds < earliestTimestamp) {
+          earliestTimestamp = timestampSeconds;
+        }
+        if (timestampSeconds > latestTimestamp) {
+          latestTimestamp = timestampSeconds;
+        }
+
+        for (StopTimeUpdate stopTimeUpdate
+            : tripUpdate.getStopTimeUpdateList()) {
+          stopUpdateCount++;
+          AgencyAndId stop = createId(stopTimeUpdate.getStopId());
+          Long arrivalTimeSeconds = stopTimeUpdate.getArrival().hasDelay()
+              ? stopTimeUpdate.getArrival().getTime() : null;
+          Long departureTimeSeconds = stopTimeUpdate.getDeparture().hasDelay()
+              ? stopTimeUpdate.getDeparture().getTime() : null;
+          this._shortTermStopTimePredictionStorageService.putPrediction(trip,
+              stop, arrivalTimeSeconds, departureTimeSeconds, timestampSeconds);
+        }
+
+        tripUpdateCount++;
+      } catch (Exception e) {
+        _log.warn(String.format(
+            "Exception handling { tripUpdate { %s } tripDescriptor { %s } }",
+            tripUpdate, tripDescriptor).replace("\n", " "), e);
+      }
+    }
+    if (tripUpdateCount > 0) {
+      _log.debug(String.format(
+          "Feed message {%s} contained %d trip updates (timestamped %tc to "
+          + "%tc) containing %d stop updates",
+          tripUpdates.hasHeader()
+          ? tripUpdates.getHeader().toString().replace("\n", " ")
+          : "(headerless)",
+          tripUpdateCount, earliestTimestamp * 1000, latestTimestamp * 1000,
+          stopUpdateCount));
+    } else {
+      _log.warn(String.format("Feed message {%s} contained no trip updates",
+          tripUpdates.hasHeader() ? tripUpdates.getHeader() : "(headerless)"));
+    }
+  }
 
   /**
    * 
@@ -238,16 +323,25 @@ public class GtfsRealtimeSource {
     Set<AgencyAndId> seenVehicles = new HashSet<AgencyAndId>();
 
     for (CombinedTripUpdatesAndVehiclePosition update : updates) {
-      VehicleLocationRecord record = _tripsLibrary.createVehicleLocationRecordForUpdate(update);
-      if (record != null) {
-        AgencyAndId vehicleId = record.getVehicleId();
-        seenVehicles.add(vehicleId);
-        Date timestamp = new Date(record.getTimeOfRecord());
-        Date prev = _lastVehicleUpdate.get(vehicleId);
-        if (prev == null || prev.before(timestamp)) {
-          _vehicleLocationListener.handleVehicleLocationRecord(record);
-          _lastVehicleUpdate.put(vehicleId, timestamp);
+      try {
+        VehicleLocationRecord record =
+            _tripsLibrary.createVehicleLocationRecordForUpdate(update);
+        if (record != null) {
+          AgencyAndId vehicleId = record.getVehicleId();
+          seenVehicles.add(vehicleId);
+          Date timestamp = new Date(record.getTimeOfRecord());
+          Date prev = _lastVehicleUpdate.get(vehicleId);
+          if (prev == null || prev.before(timestamp)) {
+            _vehicleLocationListener.handleVehicleLocationRecord(record);
+            _lastVehicleUpdate.put(vehicleId, timestamp);
+          }
         }
+      } catch (Exception e) {
+        _log.warn(String.format(
+            "Exception handling { block { %s } tripUpdates { %s } "
+            + "vehiclePosition { %s } }",
+            update.block == null ? null : update.block.getBlockEntry(),
+            update.tripUpdates, update.vehiclePosition).replace("\n", " "), e);
       }
     }
 
@@ -275,21 +369,28 @@ public class GtfsRealtimeSource {
         continue;
       }
 
-      AgencyAndId id = createId(entity.getId());
+      try {
 
-      if (entity.getIsDeleted()) {
-        _alertsById.remove(id);
-        _serviceAlertService.removeServiceAlert(id);
-      } else {
-        ServiceAlert.Builder serviceAlertBuilder = _alertLibrary.getAlertAsServiceAlert(
-            id, alert);
-        ServiceAlert serviceAlert = serviceAlertBuilder.build();
-        ServiceAlert existingAlert = _alertsById.get(id);
-        if (existingAlert == null || !existingAlert.equals(serviceAlert)) {
-          _alertsById.put(id, serviceAlert);
-          _serviceAlertService.createOrUpdateServiceAlert(serviceAlertBuilder,
-              _agencyIds.get(0));
+        AgencyAndId id = createId(entity.getId());
+
+        if (entity.getIsDeleted()) {
+          _alertsById.remove(id);
+          _serviceAlertService.removeServiceAlert(id);
+        } else {
+          ServiceAlert.Builder serviceAlertBuilder = _alertLibrary.getAlertAsServiceAlert(
+              id, alert);
+          ServiceAlert serviceAlert = serviceAlertBuilder.build();
+          ServiceAlert existingAlert = _alertsById.get(id);
+          if (existingAlert == null || !existingAlert.equals(serviceAlert)) {
+            _alertsById.put(id, serviceAlert);
+            _serviceAlertService.createOrUpdateServiceAlert(serviceAlertBuilder,
+                _agencyIds.get(0));
+          }
         }
+      } catch (Exception e) {
+        _log.warn(String.format(
+            "Exception handling alert { " +
+            alert + " }").replace("\n", " "), e);
       }
     }
   }

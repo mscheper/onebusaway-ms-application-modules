@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2011 Brian Ferris <bdferris@onebusaway.org>
- *
+ * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -15,11 +15,17 @@
  */
 package org.onebusaway.transit_data_federation.impl;
 
+import org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.ShortTermStopTimePredictionStorageService;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,6 +71,45 @@ import org.springframework.stereotype.Component;
 @Component
 class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
 
+  /**
+   * A policy for the times this service should provide for scheduled trips and
+   * stops. 'External predictions' sent as future location data to
+   * {@link GtfsRealtimeSource}.
+   * 
+   * @see GtfsRealtimeSource#setTripUpdatesUrl(URL)
+   */
+  public enum PredictionPolicy {
+
+    /**
+     * Do not use external predictions; let OneBusAway do all the predicting.
+     */
+    OBA_PREDICTION,
+
+    /**
+     * Use external predictions when they exist; otherwise use
+     * {@link #OBA_PREDICTION}.
+     */
+    OBA_FALLBACK,
+
+    /**
+     * Use external predictions when they exist; otherwise provide scheduled
+     * times.
+     */
+    SCHEDULE_FALLBACK,
+
+    /**
+     * Use external predictions when they exist; otherwise do not provide the
+     * arrival or departure.
+     */
+    EXTERNAL_ONLY
+  }
+
+  private static final Logger _log = LoggerFactory.getLogger(ArrivalAndDepartureServiceImpl.class);
+
+  private PredictionPolicy _predictionPolicy = PredictionPolicy.EXTERNAL_ONLY; // TODO: set using Spring
+
+  private ShortTermStopTimePredictionStorageService _shortTermStopTimePredictionStorageService;
+
   private StopTimeService _stopTimeService;
 
   private BlockLocationService _blockLocationService;
@@ -93,6 +138,21 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
     _stopTransferService = stopTransferService;
   }
 
+  @Autowired
+  public void setShortTermStopTimePredictionStorageService(
+      ShortTermStopTimePredictionStorageService shortTermStopTimePredictionStorageService) {
+    _shortTermStopTimePredictionStorageService = shortTermStopTimePredictionStorageService;
+  }
+
+  /**
+   * Sets the prediction policy for this service.
+   * 
+   * @param a {@link PredictionPolicy} constant as a string
+   */
+  public void setPredictionPolicy(String predictionPolicyString) {
+    _predictionPolicy = PredictionPolicy.valueOf(predictionPolicyString);
+  }
+
   @Override
   public List<ArrivalAndDepartureInstance> getArrivalsAndDeparturesForStopInTimeRange(
       StopEntry stop, TargetTime targetTime, long fromTime, long toTime) {
@@ -105,7 +165,14 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
         stop, fromTimeBuffered, toTimeBuffered,
         EFrequencyStopTimeBehavior.INCLUDE_UNSPECIFIED);
 
+    // TODO: Does a frequencyOffsetTime stuff up external predictions?
     long frequencyOffsetTime = Math.max(targetTime.getTargetTime(), fromTime);
+    if (_predictionPolicy != PredictionPolicy.OBA_PREDICTION &&
+        frequencyOffsetTime != 0) {
+      _log.warn(String.format("frequencyOffsetTime == %d but " +
+         "_predictionPolicy == %s: this hasn't been tested!",
+         frequencyOffsetTime, _predictionPolicy));
+    }
 
     Map<BlockInstance, List<StopTimeInstance>> stisByBlockId = getStopTimeInstancesByBlockInstance(stis);
 
@@ -120,9 +187,23 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
       List<StopTimeInstance> stisForBlock = entry.getValue();
 
       for (StopTimeInstance sti : stisForBlock) {
-
         applyRealTimeToStopTimeInstance(sti, targetTime, fromTime, toTime,
             frequencyOffsetTime, blockInstance, locations, instances);
+      }
+    }
+
+    if (_predictionPolicy == PredictionPolicy.OBA_PREDICTION) {
+      return instances;
+    }
+
+    for (Iterator<ArrivalAndDepartureInstance> instanceIterator = instances.iterator(); instanceIterator.hasNext(); ) {
+      ArrivalAndDepartureInstance instance = instanceIterator.next();
+      if (!applyExternalPredictions(instance)) {
+        if (_predictionPolicy == PredictionPolicy.SCHEDULE_FALLBACK) {
+            clearPredictions(instance);
+        } else if (_predictionPolicy == PredictionPolicy.EXTERNAL_ONLY) {
+            instanceIterator.remove();
+        } // else this is OBA_FALLBACK
       }
     }
 
@@ -418,9 +499,10 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
     int resultCount = query.getResultCount();
     boolean includePrivateService = query.isIncludePrivateService();
 
-    int runningEarlySlack = applyRealTime ? _blockStatusService.getRunningEarlyWindow() : 0;
-    int runningLateSlack = (applyRealTime ? _blockStatusService.getRunningLateWindow() : 0)
-        + lookaheadTime;
+    int runningEarlySlack = applyRealTime
+        ? _blockStatusService.getRunningEarlyWindow() : 0;
+    int runningLateSlack = (applyRealTime
+        ? _blockStatusService.getRunningLateWindow() : 0) + lookaheadTime;
 
     List<Pair<StopTimeInstance>> pairs = _stopTimeService.getNextDeparturesBetweenStopPair(
         fromStop, toStop, tFrom, runningEarlySlack, runningLateSlack,
@@ -981,6 +1063,47 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
     instance.setBlockSequence(sti.getBlockSequence());
 
     return instance;
+  }
+
+  private void clearPredictions(
+      ArrivalAndDepartureInstance arrivalAndDepartureInstance) {
+    arrivalAndDepartureInstance.setPredictedArrivalTime(0);
+    arrivalAndDepartureInstance.setPredictedDepartureTime(0);
+  }
+
+  /**
+   * Applies external predictions to an ArrivalAndDepartureInstance, if such
+   * predictions are available.
+   * 
+   * @param arrivalAndDepartureInstance the ArrivalAndDepartureInstance
+   * @return <code>true</code> if predictions were available and applied;
+   *         <code>false</code> otherwise
+   */
+  private boolean applyExternalPredictions(
+      ArrivalAndDepartureInstance arrivalAndDepartureInstance) {
+    StopTimeInstance stopTimeInstance
+        = arrivalAndDepartureInstance.getStopTimeInstance();
+    AgencyAndId stop = stopTimeInstance.getStop().getId();
+    AgencyAndId trip = stopTimeInstance.getTrip().getTrip().getId();
+    Pair<Long> prediction
+        = _shortTermStopTimePredictionStorageService.getPrediction(trip, stop);
+
+    if (prediction == null) {
+      return false;
+    }
+    if (prediction.getFirst() != null) {
+      arrivalAndDepartureInstance.setPredictedArrivalTime(
+          prediction.getFirst() * 1000);
+    } else if (_predictionPolicy != PredictionPolicy.OBA_FALLBACK) {
+      arrivalAndDepartureInstance.setPredictedArrivalTime(0);
+    }
+    if (prediction.getSecond() != null) {
+      arrivalAndDepartureInstance.setPredictedDepartureTime(
+          prediction.getSecond() * 1000);
+    } else if (_predictionPolicy != PredictionPolicy.OBA_FALLBACK) {
+      arrivalAndDepartureInstance.setPredictedDepartureTime(0);
+    }
+    return true;
   }
 
   private ArrivalAndDepartureInstance createArrivalAndDeparture(

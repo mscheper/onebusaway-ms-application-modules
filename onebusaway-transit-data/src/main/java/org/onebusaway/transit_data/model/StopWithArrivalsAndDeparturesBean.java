@@ -59,4 +59,24 @@ public class StopWithArrivalsAndDeparturesBean extends ApplicationBean {
   public List<ServiceAlertBean> getSituations() {
     return situations;
   }
+
+  @Override
+  public String toString() {
+    final int maxLen = 64;
+    StringBuilder builder = new StringBuilder();
+    builder.append("StopWithArrivalsAndDeparturesBean{ stop=");
+    builder.append(stop);
+    builder.append("; arrivalsAndDepartures=");
+    builder.append(arrivalsAndDepartures != null
+        ? arrivalsAndDepartures.subList(0,
+            Math.min(arrivalsAndDepartures.size(), maxLen)) : null);
+    builder.append("; nearbyStops=");
+    builder.append(nearbyStops != null ? nearbyStops.subList(0,
+        Math.min(nearbyStops.size(), maxLen)) : null);
+    builder.append("; situations=");
+    builder.append(situations != null ? situations.subList(0,
+        Math.min(situations.size(), maxLen)) : null);
+    builder.append(" }");
+    return builder.toString();
+  }
 }

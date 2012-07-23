@@ -37,7 +37,7 @@ public class StopBean implements Serializable {
   private int locationType;
 
   private List<RouteBean> routes;
-  
+
   private EAccessibility wheelchairBoarding;
 
   public String getId() {
@@ -132,4 +132,37 @@ public class StopBean implements Serializable {
   public int hashCode() {
     return id.hashCode();
   }
+
+  /*
+   * (non-Javadoc)
+   * 
+   * @see java.lang.Object#toString()
+   */
+  @Override
+  public String toString() {
+    final int maxLen = 64;
+    StringBuilder builder = new StringBuilder();
+    builder.append("StopBean{ id=");
+    builder.append(id);
+    builder.append("; lat=");
+    builder.append(lat);
+    builder.append("; lon=");
+    builder.append(lon);
+    builder.append("; direction=");
+    builder.append(direction);
+    builder.append("; name=");
+    builder.append(name);
+    builder.append("; code=");
+    builder.append(code);
+    builder.append("; locationType=");
+    builder.append(locationType);
+    builder.append("; routes=");
+    builder.append(routes != null ? routes.subList(0,
+        Math.min(routes.size(), maxLen)) : null);
+    builder.append("; wheelchairBoarding=");
+    builder.append(wheelchairBoarding);
+    builder.append(" }");
+    return builder.toString();
+  }
+
 }
