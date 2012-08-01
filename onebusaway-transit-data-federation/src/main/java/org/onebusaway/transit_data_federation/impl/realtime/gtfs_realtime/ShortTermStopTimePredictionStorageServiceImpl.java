@@ -56,10 +56,7 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
 
   private Timer _expiredPredictionCleanUpTimer;
 
-  private ExpiredPredictionCleanUpTask _expiredPredictionCleanUpTask;
-
   public ShortTermStopTimePredictionStorageServiceImpl() {
-    _expiredPredictionCleanUpTask = new ExpiredPredictionCleanUpTask();
     constructExpiredPredictionCleanUpTimer();
   }
 
@@ -72,6 +69,11 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
           prediction));
     }
     if (prediction == null) {
+      return null;
+    }
+    if (isPredictionExpired(prediction.predictionTimestampSeconds)) {
+      _log.info(String.format("Not returning expired prediction %s for %s",
+          prediction, tripIdAndStopId));
       return null;
     }
     return Tuples.pair(prediction.arrivalTimeSeconds,
@@ -87,6 +89,12 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
 
     Prediction prediction = new Prediction(arrivalTimeSeconds,
         departureTimeSeconds, predictionTimestampSeconds);
+
+    if (isPredictionExpired(predictionTimestampSeconds)) {
+      _log.warn(String.format("Prediction %s for %s has already expired",
+          prediction, tripIdAndStopId));
+      return;
+    }
 
     synchronized (_predictions) {
       removeFromExpiryBucket(tripIdAndStopId);
@@ -205,11 +213,10 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
     if (_expiredPredictionCleanUpTimer != null) {
       _expiredPredictionCleanUpTimer.cancel();
     }
-    String name = String.format("Expired Prediction Clean-Up Task");
-    _expiredPredictionCleanUpTimer = new Timer(name, true);
-    _expiredPredictionCleanUpTimer.schedule(_expiredPredictionCleanUpTask, 0,
-        _bucketSizeSeconds * 1000);
-    _log.info(name);
+    _expiredPredictionCleanUpTimer
+        = new Timer("Expired Prediction Clean-Up Task", true);
+    _expiredPredictionCleanUpTimer.schedule(new ExpiredPredictionCleanUpTask(),
+        _bucketSizeSeconds * 1000, _bucketSizeSeconds * 1000);
   }
 
   /**

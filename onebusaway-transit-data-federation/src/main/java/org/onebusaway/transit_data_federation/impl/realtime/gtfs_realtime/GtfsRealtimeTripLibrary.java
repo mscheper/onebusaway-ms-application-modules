@@ -204,10 +204,12 @@ class GtfsRealtimeTripLibrary {
       }
 
       TripDescriptor trip = tripUpdate.getTrip();
+      String sourceDebugInfo = String.format("{ feedEntity { %s } "
+          + "tripDescriptor { %s } }", entity, trip).replace("\n", " ");
 
       try {
         BlockDescriptor blockDescriptor = getTripDescriptorAsBlockDescriptor(
-            trip, true);
+            trip, true, sourceDebugInfo);
         totalTrips++;
         if (blockDescriptor == null) {
           unknownTrips++;
@@ -220,9 +222,7 @@ class GtfsRealtimeTripLibrary {
 
         tripUpdatesByBlockDescriptor.get(blockDescriptor).add(tripUpdate);
       } catch (Exception e) {
-        _log.warn(String.format(
-            "Exception handling { tripUpdate { %s } tripDescriptor { %s } }",
-            tripUpdate, trip).replace("\n", " "), e);
+        _log.warn(String.format("Exception handling %s", sourceDebugInfo), e);
       }
     }
 
@@ -277,10 +277,13 @@ class GtfsRealtimeTripLibrary {
       }
 
       TripDescriptor trip = vehiclePosition.getTrip();
+      String sourceDebugInfo = String.format("{ feedEntity { %s } " +
+          "vehiclePosition { %s } tripDescriptor { %s } }",
+          entity, vehiclePosition, trip).replace("\n", " ");
 
       try{
         BlockDescriptor blockDescriptor = getTripDescriptorAsBlockDescriptor(
-            trip, includeVehicleIds);
+            trip, includeVehicleIds, sourceDebugInfo);
         if (blockDescriptor != null) {
           FeedEntity existing = vehiclePositionsByBlockDescriptor.put(
               blockDescriptor, entity);
@@ -289,9 +292,7 @@ class GtfsRealtimeTripLibrary {
           }
         }
       } catch (Exception e) {
-        _log.warn(String.format(
-            "Exception handling { feedEntity { %s } vehiclePosition { %s } tripDescriptor { %s } }",
-            entity, vehiclePosition, trip).replace("\n", " "), e);
+        _log.warn(String.format("Exception handling %s", sourceDebugInfo), e);
       }
     }
 
@@ -299,13 +300,15 @@ class GtfsRealtimeTripLibrary {
   }
 
   private BlockDescriptor getTripDescriptorAsBlockDescriptor(
-      TripDescriptor trip, boolean includeVehicleIds) {
+      TripDescriptor trip, boolean includeVehicleIds,
+      String sourceDebugInfo) {
     if (!trip.hasTripId() || trip.hasRouteId()) {
       return null;
     }
     TripEntry tripEntry = _entitySource.getTrip(trip.getTripId());
     if (tripEntry == null) {
-      _log.warn("no trip found with id=" + trip.getTripId());
+      _log.warn(String.format("No trip found for trip with ID %s from %s",
+          trip.getTripId(), sourceDebugInfo));
       return null;
     }
     BlockEntry block = tripEntry.getBlock();

@@ -73,10 +73,11 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
 
   /**
    * A policy for the times this service should provide for scheduled trips and
-   * stops. 'External predictions' sent as future location data to
-   * {@link GtfsRealtimeSource}.
+   * stops. 'External predictions' are the real-time data sent to {@link
+   * org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.GtfsRealtimeSource}.
+   * (TODO: in future, should that be future-datestamped real-time data only?)
    * 
-   * @see GtfsRealtimeSource#setTripUpdatesUrl(URL)
+   * @see org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.GtfsRealtimeSource#setTripUpdatesUrl(java.net.URL)
    */
   public enum PredictionPolicy {
 
@@ -106,7 +107,7 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
 
   private static final Logger _log = LoggerFactory.getLogger(ArrivalAndDepartureServiceImpl.class);
 
-  private PredictionPolicy _predictionPolicy = PredictionPolicy.EXTERNAL_ONLY; // TODO: set using Spring
+  private PredictionPolicy _predictionPolicy = PredictionPolicy.OBA_PREDICTION;
 
   private ShortTermStopTimePredictionStorageService _shortTermStopTimePredictionStorageService;
 
@@ -147,7 +148,7 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
   /**
    * Sets the prediction policy for this service.
    * 
-   * @param a {@link PredictionPolicy} constant as a string
+   * @param predictionPolicyString a {@link PredictionPolicy} constant as a string
    */
   public void setPredictionPolicy(String predictionPolicyString) {
     _predictionPolicy = PredictionPolicy.valueOf(predictionPolicyString);
