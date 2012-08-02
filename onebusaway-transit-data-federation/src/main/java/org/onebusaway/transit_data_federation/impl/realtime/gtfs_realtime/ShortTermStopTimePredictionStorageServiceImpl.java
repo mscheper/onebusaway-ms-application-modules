@@ -2,7 +2,7 @@ package org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime;
 
 import org.onebusaway.collections.tuple.Pair;
 import org.onebusaway.collections.tuple.Tuples;
-import org.onebusaway.gtfs.model.AgencyAndId;
+import org.onebusaway.transit_data.services.ShortTermStopTimePredictionStorageService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,8 +41,8 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
   /**
    * The predictions map. The keys are Pair&lt;trip,stop&gt;.
    */
-  private Map<Pair<AgencyAndId>, Prediction> _predictions
-      = new HashMap<Pair<AgencyAndId>, Prediction>();
+  private Map<Pair<String>, Prediction> _predictions
+      = new HashMap<Pair<String>, Prediction>();
 
   /**
    * A map of expiry time intervals to lists of prediction keys. For each entry,
@@ -51,8 +51,8 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
    * possible for any entry in the _predictions map whose &lt;trip,stop&gt; key
    * is in the bucket.
    */
-  private SortedMap<Long, Set<Pair<AgencyAndId>>> _expiryBuckets
-      = new TreeMap<Long, Set<Pair<AgencyAndId>>>();
+  private SortedMap<Long, Set<Pair<String>>> _expiryBuckets
+      = new TreeMap<Long, Set<Pair<String>>>();
 
   private Timer _expiredPredictionCleanUpTimer;
 
@@ -61,13 +61,9 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
   }
 
   @Override
-  public Pair<Long> getPrediction(AgencyAndId trip, AgencyAndId stop) {
-    Pair<AgencyAndId> tripIdAndStopId = Tuples.pair(trip, stop);
+  public Pair<Long> getPrediction(String trip, String stop) {
+    Pair<String> tripIdAndStopId = Tuples.pair(trip, stop);
     Prediction prediction = _predictions.get(tripIdAndStopId);
-    if ("2000119".equals(stop.getId())) {
-      _log.debug(String.format("getPrediction(%s): %s", tripIdAndStopId,
-          prediction));
-    }
     if (prediction == null) {
       return null;
     }
@@ -81,11 +77,11 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
   }
 
   @Override
-  public void putPrediction(AgencyAndId trip, AgencyAndId stop,
+  public void putPrediction(String trip, String stop,
       Long arrivalTimeSeconds, Long departureTimeSeconds,
       long predictionTimestampSeconds) {
 
-    Pair<AgencyAndId> tripIdAndStopId = Tuples.pair(trip, stop);
+    Pair<String> tripIdAndStopId = Tuples.pair(trip, stop);
 
     Prediction prediction = new Prediction(arrivalTimeSeconds,
         departureTimeSeconds, predictionTimestampSeconds);
@@ -240,14 +236,14 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
    * necessary. The calling method must synchronise on {@link #_predictions}
    * while calling this method.
    */
-  private void putInExpiryBucket(Pair<AgencyAndId> tripIdAndStopId,
+  private void putInExpiryBucket(Pair<String> tripIdAndStopId,
       long predictionTimestampSeconds) {
     long bucketTimestamp = getBucketTimestamp(predictionTimestampSeconds);
-    Set<Pair<AgencyAndId>> bucket = _expiryBuckets.get(bucketTimestamp);
+    Set<Pair<String>> bucket = _expiryBuckets.get(bucketTimestamp);
     if (bucket == null) {
       _log.debug(String.format("Created bucket %s",
           debugTimeFormat(bucketTimestamp)));
-      bucket = new HashSet<Pair<AgencyAndId>>();
+      bucket = new HashSet<Pair<String>>();
       _expiryBuckets.put(bucketTimestamp, bucket);
     }
     bucket.add(tripIdAndStopId);
@@ -258,14 +254,14 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
    * The calling method must synchronise on {@link #_predictions} while calling
    * this method.
    */
-  private void removeFromExpiryBucket(Pair<AgencyAndId> tripIdAndStopId) {
+  private void removeFromExpiryBucket(Pair<String> tripIdAndStopId) {
     Prediction oldPrediction = _predictions.get(tripIdAndStopId);
     if (oldPrediction == null) {
       return;
     }
     long bucketTimestamp = getBucketTimestamp(
         oldPrediction.predictionTimestampSeconds);
-    Set<Pair<AgencyAndId>> bucket = _expiryBuckets.get(bucketTimestamp);
+    Set<Pair<String>> bucket = _expiryBuckets.get(bucketTimestamp);
     if (bucket == null) {
       _log.error(String.format(
         "No bucket %s found for old prediction %s for %s",
@@ -287,10 +283,10 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
 
   private void removeExpiredPredictions() {
     synchronized (_predictions) {
-      for (Iterator<Map.Entry<Long, Set<Pair<AgencyAndId>>>> bucketIterator
+      for (Iterator<Map.Entry<Long, Set<Pair<String>>>> bucketIterator
           = _expiryBuckets.entrySet().iterator(); bucketIterator.hasNext(); ) {
 
-        Map.Entry<Long, Set<Pair<AgencyAndId>>> bucketEntry = bucketIterator.next();
+        Map.Entry<Long, Set<Pair<String>>> bucketEntry = bucketIterator.next();
 
         Long bucketTimestamp = bucketEntry.getKey();
         if (!isPredictionExpired(bucketTimestamp)) {
@@ -302,15 +298,15 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
           return;
         }
 
-        Set<Pair<AgencyAndId>> bucket = bucketEntry.getValue();
+        Set<Pair<String>> bucket = bucketEntry.getValue();
 
         _log.debug(String.format("Removing %d expired predictions for %s:",
             bucket.size(), debugTimeFormat(bucketTimestamp)));
 
-        for (Iterator<Pair<AgencyAndId>> bucketContentIterator = bucket.iterator();
+        for (Iterator<Pair<String>> bucketContentIterator = bucket.iterator();
             bucketContentIterator.hasNext();) {
 
-          Pair<AgencyAndId> tripIdAndStopId = bucketContentIterator.next();
+          Pair<String> tripIdAndStopId = bucketContentIterator.next();
           Prediction prediction = _predictions.get(tripIdAndStopId);
 
           if (prediction == null) {
@@ -329,13 +325,6 @@ public class ShortTermStopTimePredictionStorageServiceImpl implements
 
           _predictions.remove(tripIdAndStopId);
           bucketContentIterator.remove();
-
-          if ("2000119".equals(tripIdAndStopId.getSecond().getId())) {
-            _log.debug(String.format("\tRemoved prediction %s for %s from "
-                + "bucket %s", prediction, tripIdAndStopId,
-                debugTimeFormat(bucketTimestamp)));
-          }
-
         }
 
         if (!bucket.isEmpty()) {

@@ -1,7 +1,7 @@
 package org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime;
 
 import org.onebusaway.collections.tuple.Pair;
-import org.onebusaway.gtfs.model.AgencyAndId;
+import org.onebusaway.gtfs.model.String;
 
 /**
  * A short-term store for stop time predictions.
@@ -22,27 +22,27 @@ public interface ShortTermStopTimePredictionStorageService {
    * Returns <code>null</code> if no prediction for the trip and stop is stored.
    * Either element of the Pair can also be <code>null</code>.
    * 
-   * @param trip the agency and ID for the trip
-   * @param stop the agency and ID for the stop
+   * @param trip the ID for the trip
+   * @param stop the ID for the stop
    * @return the arrival and departure times, respectively, as milliseconds
    *         since the epoch, or <code>null</code> if no prediction for the trip
    *         and stop is stored
    */
-  public Pair<Long> getPrediction(AgencyAndId trip, AgencyAndId stop);
+  public Pair<Long> getPrediction(String trip, String stop);
 
   /**
    * Stores an arrival and departure prediction data for a trip and stop. All
    * times are expressed in <em>seconds</em> since the epoch.
    * 
-   * @param trip the agency and trip ID
-   * @param stop the agency and stop ID
+   * @param trip the ID for the trip
+   * @param stop the ID for the stop
    * @param arrivalTimeSeconds the predicted arrival time for the trip at the
    *          stop
    * @param departureTimeSeconds the predicted departure time for the trip at
    *          the stop
    * @param timestampSeconds the time that the prediction was made
    */
-  public void putPrediction(AgencyAndId trip, AgencyAndId stop,
+  public void putPrediction(String trip, String stop,
       Long arrivalTimeSeconds, Long departureTimeSeconds,
       long timestampSeconds);
 

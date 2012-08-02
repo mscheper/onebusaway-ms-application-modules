@@ -1084,10 +1084,10 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
       ArrivalAndDepartureInstance arrivalAndDepartureInstance) {
     StopTimeInstance stopTimeInstance
         = arrivalAndDepartureInstance.getStopTimeInstance();
-    AgencyAndId stop = stopTimeInstance.getStop().getId();
-    AgencyAndId trip = stopTimeInstance.getTrip().getTrip().getId();
-    Pair<Long> prediction
-        = _shortTermStopTimePredictionStorageService.getPrediction(trip, stop);
+    String stopId = stopTimeInstance.getStop().getId().toString();
+    String tripId = stopTimeInstance.getTrip().getTrip().getId().toString();
+    Pair<Long> prediction = _shortTermStopTimePredictionStorageService
+        .getPrediction(tripId, stopId);
 
     if (prediction == null) {
       return false;
