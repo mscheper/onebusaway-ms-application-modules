@@ -1,7 +1,6 @@
 package org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime;
 
 import org.onebusaway.collections.tuple.Pair;
-import org.onebusaway.gtfs.model.String;
 
 /**
  * A short-term store for stop time predictions.
