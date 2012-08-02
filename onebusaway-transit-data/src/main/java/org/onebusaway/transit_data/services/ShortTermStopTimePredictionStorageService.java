@@ -1,4 +1,4 @@
-package org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime;
+package org.onebusaway.transit_data.services;
 
 import org.onebusaway.collections.tuple.Pair;
 

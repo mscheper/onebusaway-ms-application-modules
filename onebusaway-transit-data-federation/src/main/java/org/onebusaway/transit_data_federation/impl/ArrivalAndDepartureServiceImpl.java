@@ -15,7 +15,7 @@
  */
 package org.onebusaway.transit_data_federation.impl;
 
-import org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.ShortTermStopTimePredictionStorageService;
+import org.onebusaway.transit_data.services.ShortTermStopTimePredictionStorageService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
