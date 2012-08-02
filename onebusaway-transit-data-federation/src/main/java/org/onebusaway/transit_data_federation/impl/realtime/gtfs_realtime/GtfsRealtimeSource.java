@@ -276,8 +276,9 @@ public class GtfsRealtimeSource {
               ? stopTimeUpdate.getArrival().getTime() : null;
           Long departureTimeSeconds = stopTimeUpdate.getDeparture().hasDelay()
               ? stopTimeUpdate.getDeparture().getTime() : null;
-          this._shortTermStopTimePredictionStorageService.putPrediction(trip,
-              stop, arrivalTimeSeconds, departureTimeSeconds, timestampSeconds);
+          this._shortTermStopTimePredictionStorageService.putPrediction(
+              trip.toString(), stop.toString(), arrivalTimeSeconds,
+              departureTimeSeconds, timestampSeconds);
         }
 
         tripUpdateCount++;
