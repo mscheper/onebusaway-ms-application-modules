@@ -13,9 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/**
- * 
- */
 package org.onebusaway.transit_data_federation.impl.shapes;
 
 import org.onebusaway.geospatial.model.CoordinatePoint;
@@ -23,6 +20,10 @@ import org.onebusaway.transit_data_federation.model.ShapePoints;
 
 import java.util.Arrays;
 
+/**
+ * Encapsulates the distance between two
+ * {@link org.onebusaway.transit_data_federation.model.ShapePoints}.
+ */
 public class DistanceTraveledShapePointIndex extends AbstractShapePointIndex {
 
   private double _shapeDistanceTraveled;
@@ -37,6 +38,10 @@ public class DistanceTraveledShapePointIndex extends AbstractShapePointIndex {
 
   public DistanceTraveledShapePointIndex(double shapeDistanceTraveled,
       int fromIndex, int toIndex) {
+    if (fromIndex > toIndex) {
+      throw new IllegalArgumentException(
+          String.format("fromIndex(%d) > toIndex(%d)", fromIndex, toIndex));
+    }
     _shapeDistanceTraveled = shapeDistanceTraveled;
     _fromIndex = fromIndex;
     _toIndex = toIndex;
