@@ -1,12 +1,12 @@
 /**
  * Copyright (C) 2011 Brian Ferris <bdferris@onebusaway.org>
  * 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ * 
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -73,8 +73,8 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
 
   /**
    * A policy for the times this service should provide for scheduled trips and
-   * stops. 'External predictions' are the real-time data sent to {@link
-   * org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.GtfsRealtimeSource}.
+   * stops. 'External predictions' are the real-time data sent to
+   * {@link org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.GtfsRealtimeSource}.
    * (TODO: in future, should that be future-datestamped real-time data only?)
    * 
    * @see org.onebusaway.transit_data_federation.impl.realtime.gtfs_realtime.GtfsRealtimeSource#setTripUpdatesUrl(java.net.URL)
@@ -166,14 +166,7 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
         stop, fromTimeBuffered, toTimeBuffered,
         EFrequencyStopTimeBehavior.INCLUDE_UNSPECIFIED);
 
-    // TODO: Does a frequencyOffsetTime stuff up external predictions?
     long frequencyOffsetTime = Math.max(targetTime.getTargetTime(), fromTime);
-    if (_predictionPolicy != PredictionPolicy.OBA_PREDICTION &&
-        frequencyOffsetTime != 0) {
-      _log.warn(String.format("frequencyOffsetTime == %d but " +
-         "_predictionPolicy == %s: this hasn't been tested!",
-         frequencyOffsetTime, _predictionPolicy));
-    }
 
     Map<BlockInstance, List<StopTimeInstance>> stisByBlockId = getStopTimeInstancesByBlockInstance(stis);
 
@@ -201,9 +194,9 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
       ArrivalAndDepartureInstance instance = instanceIterator.next();
       if (!applyExternalPredictions(instance)) {
         if (_predictionPolicy == PredictionPolicy.SCHEDULE_FALLBACK) {
-            clearPredictions(instance);
+          clearPredictions(instance);
         } else if (_predictionPolicy == PredictionPolicy.EXTERNAL_ONLY) {
-            instanceIterator.remove();
+          instanceIterator.remove();
         } // else this is OBA_FALLBACK
       }
     }
@@ -1082,25 +1075,22 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
    */
   private boolean applyExternalPredictions(
       ArrivalAndDepartureInstance arrivalAndDepartureInstance) {
-    StopTimeInstance stopTimeInstance
-        = arrivalAndDepartureInstance.getStopTimeInstance();
+    StopTimeInstance stopTimeInstance = arrivalAndDepartureInstance.getStopTimeInstance();
     String stopId = stopTimeInstance.getStop().getId().toString();
     String tripId = stopTimeInstance.getTrip().getTrip().getId().toString();
-    Pair<Long> prediction = _shortTermStopTimePredictionStorageService
-        .getPrediction(tripId, stopId);
+    Pair<Long> prediction = _shortTermStopTimePredictionStorageService.getPrediction(
+        tripId, stopId);
 
     if (prediction == null) {
       return false;
     }
     if (prediction.getFirst() != null) {
-      arrivalAndDepartureInstance.setPredictedArrivalTime(
-          prediction.getFirst() * 1000);
+      arrivalAndDepartureInstance.setPredictedArrivalTime(prediction.getFirst() * 1000);
     } else if (_predictionPolicy != PredictionPolicy.OBA_FALLBACK) {
       arrivalAndDepartureInstance.setPredictedArrivalTime(0);
     }
     if (prediction.getSecond() != null) {
-      arrivalAndDepartureInstance.setPredictedDepartureTime(
-          prediction.getSecond() * 1000);
+      arrivalAndDepartureInstance.setPredictedDepartureTime(prediction.getSecond() * 1000);
     } else if (_predictionPolicy != PredictionPolicy.OBA_FALLBACK) {
       arrivalAndDepartureInstance.setPredictedDepartureTime(0);
     }
@@ -1237,6 +1227,13 @@ class ArrivalAndDepartureServiceImpl implements ArrivalAndDepartureService {
           frequencyOffset);
 
     } else {
+
+      if (_predictionPolicy != PredictionPolicy.OBA_PREDICTION) {
+        _log.warn(String.format("WARN: Working with FrequencyEntry while "
+            + "_predictionPolicy == %s: this hasn't been tested! Check "
+            + "trip %s", _predictionPolicy,
+            stopTimeInstance.getTrip().getTrip().getId()));
+      }
 
       long departureTime = prevFrequencyTime + frequency.getHeadwaySecs()
           * 1000 / 2;
